@@ -6,6 +6,7 @@ from demo.agents.market import _extract_final_text, _extract_tool_results
 
 
 class PropertyAgent(BaseAgent):
+    MAX_TOKENS = 2048
 
     @property
     def name(self) -> str:

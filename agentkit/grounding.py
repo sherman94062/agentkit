@@ -27,7 +27,7 @@ class GroundingEvaluator:
     Send answer + source chunks to Claude and get back a grounding score.
     """
 
-    MODEL = "claude-sonnet-4-20250514"
+    MODEL = "claude-haiku-4-5-20251001"
 
     def __init__(self, client: anthropic.AsyncAnthropic):
         self.client = client

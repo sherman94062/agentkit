@@ -11,6 +11,8 @@ from demo.db import client as db
 
 
 class DocumentAgent(BaseAgent):
+    MODEL = "claude-haiku-4-5-20251001"
+    MAX_TOKENS = 2048
 
     @property
     def name(self) -> str:

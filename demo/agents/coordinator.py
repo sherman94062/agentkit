@@ -58,7 +58,7 @@ async def _synthesize(
 
     response = await client.messages.create(
         model="claude-sonnet-4-20250514",
-        max_tokens=4096,
+        max_tokens=2048,
         messages=[{"role": "user", "content": prompt}],
     )
     return response.content[0].text
@@ -92,10 +92,13 @@ def build_coordinator(
     document = DocumentAgent(registry, logger, client)
     financial = FinancialAgent(registry, logger, client)
 
-    # Wire up coordinator
+    # Wire up coordinator — DocumentAgent only runs if docs exist
     coord = Coordinator()
-    coord.register_parallel(market, prop, neighborhood, document)
+    coord.register_parallel(market, prop, neighborhood)
     coord.register_sequential(financial)  # runs after parallel — sees their results
+
+    # Store document agent for conditional use
+    coord._document_agent = document
 
     # Synthesis function captures the client
     async def synthesize(ctx, par, seq):
@@ -110,21 +113,40 @@ async def run_with_grounding(
     coordinator: Coordinator,
     context: AgentContext,
     client: anthropic.AsyncAnthropic,
+    enable_grounding: bool = False,
 ) -> dict:
-    """Run the coordinator and add grounding evaluation."""
+    """Run the coordinator and optionally add grounding evaluation.
+
+    Grounding is disabled by default to reduce cost (~1 extra Sonnet call).
+    Enable for high-stakes queries where citation accuracy matters.
+    """
+    # Conditionally add DocumentAgent if docs exist for this address
+    address = context.metadata.get("address", "")
+    if address and hasattr(coordinator, "_document_agent"):
+        from demo.db import client as db
+        docs = db.get_documents(address)
+        if docs:
+            # Temporarily add document agent to parallel
+            if coordinator._document_agent not in coordinator._parallel_agents:
+                coordinator._parallel_agents.append(coordinator._document_agent)
+        else:
+            # Remove if present from a previous query
+            if coordinator._document_agent in coordinator._parallel_agents:
+                coordinator._parallel_agents.remove(coordinator._document_agent)
+
     result = await coordinator.run(context)
 
-    # Grounding check
-    all_sources = []
-    for agent_result in result.get("agent_results", []):
-        all_sources.extend(agent_result.sources)
-
     grounding_score = 0.0
-    if result.get("answer") and all_sources:
-        evaluator = GroundingEvaluator(client)
-        grounding = await evaluator.evaluate(result["answer"], all_sources)
-        grounding_score = grounding.score
-        result["grounding"] = grounding.model_dump()
+    if enable_grounding:
+        all_sources = []
+        for agent_result in result.get("agent_results", []):
+            all_sources.extend(agent_result.sources)
+
+        if result.get("answer") and all_sources:
+            evaluator = GroundingEvaluator(client)
+            grounding = await evaluator.evaluate(result["answer"], all_sources)
+            grounding_score = grounding.score
+            result["grounding"] = grounding.model_dump()
 
     result["grounding_score"] = grounding_score
     return result

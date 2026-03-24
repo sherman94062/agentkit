@@ -8,6 +8,7 @@ import anthropic
 
 
 class MarketAgent(BaseAgent):
+    MAX_TOKENS = 2048
 
     @property
     def name(self) -> str:

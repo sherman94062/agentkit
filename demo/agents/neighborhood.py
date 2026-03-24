@@ -6,6 +6,8 @@ from demo.agents.market import _extract_final_text, _extract_tool_results
 
 
 class NeighborhoodAgent(BaseAgent):
+    MODEL = "claude-haiku-4-5-20251001"
+    MAX_TOKENS = 2048
 
     @property
     def name(self) -> str:

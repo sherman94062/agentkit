@@ -27,6 +27,7 @@ class BaseAgent(ABC):
     """
 
     MODEL = "claude-sonnet-4-20250514"
+    MAX_TOKENS = 4096
     MAX_ROUNDS = 5
     MAX_RETRIES = 3
 
@@ -98,7 +99,7 @@ class BaseAgent(ABC):
         try:
             return await self.client.messages.create(
                 model=self.MODEL,
-                max_tokens=4096,
+                max_tokens=self.MAX_TOKENS,
                 system=self.system_prompt,
                 tools=tools,
                 messages=messages,
