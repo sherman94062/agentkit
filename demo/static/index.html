@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>agentkit - Real Estate Intelligence</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 :root {
   --bg: #0f1117;
@@ -43,7 +45,7 @@ body {
 
 .layout {
   display: grid;
-  grid-template-columns: 300px 1fr 320px;
+  grid-template-columns: 420px 1fr 320px;
   height: calc(100vh - 57px);
 }
 
@@ -299,6 +301,34 @@ body {
   margin-top: 10px;
 }
 
+#map {
+  height: 400px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+#map .leaflet-control-attribution { font-size: 9px; }
+.map-toggle {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.map-toggle button {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 11px;
+  background: var(--bg);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.map-toggle button.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
 @media (max-width: 1024px) {
   .layout { grid-template-columns: 1fr; }
   .sidebar, .trace-panel { display: none; }
@@ -317,8 +347,12 @@ body {
     <h3>Active Property</h3>
     <input type="text" class="address-input" id="address" placeholder="Enter property address..." />
 
-    <h3>Data Sources</h3>
-    <ul class="source-list" id="sources"></ul>
+    <h3>Property Map</h3>
+    <div class="map-toggle">
+      <button id="btn-street" class="active" onclick="setMapLayer('street')">Street</button>
+      <button id="btn-satellite" onclick="setMapLayer('satellite')">Satellite</button>
+    </div>
+    <div id="map"></div>
 
     <h3>Documents</h3>
     <div class="drop-zone" id="drop-zone">Drop PDF here or click to upload</div>
@@ -326,6 +360,9 @@ body {
 
     <h3 style="margin-top:24px">Saved Properties</h3>
     <ul class="saved-list" id="saved-props"></ul>
+
+    <h3 style="margin-top:24px">Data Sources</h3>
+    <ul class="source-list" id="sources"></ul>
   </div>
 
   <!-- Main area -->
@@ -569,7 +606,14 @@ async function refreshProperties() {
     for (const p of (data.properties || [])) {
       const li = document.createElement('li');
       li.textContent = p.address || `Property #${p.id}`;
-      li.onclick = () => { document.getElementById('address').value = p.address; };
+      li.onclick = () => {
+        document.getElementById('address').value = p.address;
+        if (p.lat && p.lon) map.setView([p.lat, p.lon], 15);
+        // Open the matching marker popup
+        mapMarkers.forEach(m => {
+          if (m.getLatLng().lat === p.lat && m.getLatLng().lng === p.lon) m.openPopup();
+        });
+      };
       ul.appendChild(li);
     }
   } catch (e) { console.error('props', e); }
@@ -623,10 +667,109 @@ function esc(s) {
   return d.innerHTML;
 }
 
+// --- Map ---
+const map = L.map('map').setView([30.50, -98.15], 9);
+
+const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap',
+  maxZoom: 19,
+});
+const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  attribution: '&copy; Esri',
+  maxZoom: 19,
+});
+streetLayer.addTo(map);
+let currentLayer = 'street';
+
+function setMapLayer(type) {
+  if (type === 'satellite' && currentLayer !== 'satellite') {
+    map.removeLayer(streetLayer);
+    satelliteLayer.addTo(map);
+    currentLayer = 'satellite';
+  } else if (type === 'street' && currentLayer !== 'street') {
+    map.removeLayer(satelliteLayer);
+    streetLayer.addTo(map);
+    currentLayer = 'street';
+  }
+  document.getElementById('btn-street').className = type === 'street' ? 'active' : '';
+  document.getElementById('btn-satellite').className = type === 'satellite' ? 'active' : '';
+}
+
+const mapMarkers = [];
+let allProperties = [];
+
+function getMarkerColor(prop) {
+  if (prop.property_type === 'Residential') return '#22c55e';  // green
+  return '#f59e0b';  // amber for vacant land
+}
+
+function createMarkerIcon(color) {
+  return L.divIcon({
+    className: '',
+    html: `<div style="
+      width:14px;height:14px;border-radius:50%;
+      background:${color};border:2px solid white;
+      box-shadow:0 1px 4px rgba(0,0,0,0.4);
+    "></div>`,
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+    popupAnchor: [0, -10],
+  });
+}
+
+async function refreshMap() {
+  try {
+    const resp = await fetch(API + '/properties');
+    const data = await resp.json();
+    allProperties = data.properties || [];
+
+    // Clear old markers
+    mapMarkers.forEach(m => map.removeLayer(m));
+    mapMarkers.length = 0;
+
+    const bounds = [];
+    for (const p of allProperties) {
+      if (!p.lat || !p.lon) continue;
+      const color = getMarkerColor(p);
+      const marker = L.marker([p.lat, p.lon], { icon: createMarkerIcon(color) });
+
+      let meta = {};
+      try { meta = JSON.parse(p.metadata_json || '{}'); } catch(e) {}
+
+      const assessed = meta.assessed_value_2025 || meta.market_value_2025 || '';
+      const purchase = meta.purchase_price || '';
+      const community = meta.community || {};
+      const acres = p.lot_sqft ? (p.lot_sqft / 43560).toFixed(2) : '';
+
+      let popup = `<div style="font-size:13px;line-height:1.5;min-width:180px">
+        <strong>${esc(p.address)}</strong><br>
+        <span style="color:#888">${p.property_type || ''}</span>`;
+      if (acres) popup += `<br>Lot: ${acres} acres`;
+      if (assessed) popup += `<br>Assessed: $${Number(assessed).toLocaleString()}`;
+      if (purchase) popup += `<br>Purchased: $${Number(purchase).toLocaleString()}`;
+      if (community.community_name) popup += `<br>${community.community_name} off ${community.road || ''}`;
+      popup += `</div>`;
+
+      marker.bindPopup(popup);
+      marker.on('click', () => {
+        document.getElementById('address').value = p.address;
+      });
+      marker.addTo(map);
+      mapMarkers.push(marker);
+      bounds.push([p.lat, p.lon]);
+    }
+
+    if (bounds.length > 0) {
+      map.fitBounds(bounds, { padding: [30, 30], maxZoom: 14 });
+    }
+  } catch (e) { console.error('map', e); }
+}
+
 // --- Init ---
 refreshSources();
 refreshCost();
 refreshProperties();
+refreshMap();
 </script>
 </body>
 </html>
