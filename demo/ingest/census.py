@@ -39,20 +39,21 @@ async def get_demographics(zipcode: str) -> dict:
     values = data[1]
     raw = dict(zip(headers, values))
 
-    def _int(key: str) -> int | None:
+    def _num(key: str):
         v = raw.get(key)
         if v and v != "-666666666":
-            return int(v)
+            f = float(v)
+            return int(f) if f == int(f) else f
         return None
 
     return {
         "zipcode": zipcode,
-        "total_population": _int("B01003_001E"),
-        "median_household_income": _int("B19013_001E"),
-        "median_age": _int("B01002_001E"),
-        "owner_occupied_units": _int("B25003_002E"),
-        "renter_occupied_units": _int("B25003_003E"),
-        "median_home_value": _int("B25077_001E"),
-        "median_gross_rent": _int("B25064_001E"),
+        "total_population": _num("B01003_001E"),
+        "median_household_income": _num("B19013_001E"),
+        "median_age": _num("B01002_001E"),
+        "owner_occupied_units": _num("B25003_002E"),
+        "renter_occupied_units": _num("B25003_003E"),
+        "median_home_value": _num("B25077_001E"),
+        "median_gross_rent": _num("B25064_001E"),
         "source": f"US Census ACS 5-Year Estimates ({ACS_YEAR})",
     }
