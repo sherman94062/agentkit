@@ -116,3 +116,77 @@ def save_query(
     row_id = cur.lastrowid
     conn.close()
     return row_id
+
+
+def save_comparable(
+    address: str = "",
+    city: str = "",
+    state: str = "",
+    zipcode: str = "",
+    county: str = "",
+    subdivision: str = "",
+    lot_number: str = "",
+    acreage: float = 0.0,
+    property_type: str = "Vacant Land",
+    sale_date: str = "",
+    sale_price: float = 0.0,
+    price_per_acre: float = 0.0,
+    market_value: float = 0.0,
+    appraised_value: float = 0.0,
+    has_improvements: bool = False,
+    improvement_value: float = 0.0,
+    data_source: str = "manual",
+    notes: str = "",
+    metadata: dict | None = None,
+) -> int:
+    conn = _get_conn()
+    ppa = price_per_acre or (sale_price / acreage if acreage > 0 and sale_price > 0 else 0)
+    cur = conn.execute(
+        """INSERT INTO comparables
+           (address, city, state, zipcode, county, subdivision, lot_number,
+            acreage, property_type, sale_date, sale_price, price_per_acre,
+            market_value, appraised_value, has_improvements, improvement_value,
+            data_source, notes, metadata_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            address, city, state, zipcode, county, subdivision, lot_number,
+            acreage, property_type, sale_date, sale_price, ppa,
+            market_value, appraised_value, int(has_improvements), improvement_value,
+            data_source, notes, json.dumps(metadata or {}),
+        ),
+    )
+    conn.commit()
+    row_id = cur.lastrowid
+    conn.close()
+    return row_id
+
+
+def get_comparables(
+    subdivision: str = "",
+    county: str = "",
+    zipcode: str = "",
+    min_acreage: float = 0,
+    max_acreage: float = 0,
+) -> list[dict]:
+    conn = _get_conn()
+    query = "SELECT * FROM comparables WHERE 1=1"
+    params = []
+    if subdivision:
+        query += " AND subdivision = ?"
+        params.append(subdivision)
+    if county:
+        query += " AND county = ?"
+        params.append(county)
+    if zipcode:
+        query += " AND zipcode = ?"
+        params.append(zipcode)
+    if min_acreage > 0:
+        query += " AND acreage >= ?"
+        params.append(min_acreage)
+    if max_acreage > 0:
+        query += " AND acreage <= ?"
+        params.append(max_acreage)
+    query += " ORDER BY sale_date DESC"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]

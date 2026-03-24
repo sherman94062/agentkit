@@ -41,6 +41,34 @@ CREATE TABLE IF NOT EXISTS queries (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS comparables (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    address TEXT,
+    city TEXT,
+    state TEXT,
+    zipcode TEXT,
+    county TEXT,
+    subdivision TEXT,
+    lot_number TEXT,
+    acreage REAL,
+    property_type TEXT DEFAULT 'Vacant Land',
+    sale_date TEXT,
+    sale_price REAL,
+    price_per_acre REAL,
+    market_value REAL,
+    appraised_value REAL,
+    has_improvements INTEGER DEFAULT 0,
+    improvement_value REAL DEFAULT 0,
+    data_source TEXT,  -- 'blanco_cad', 'rentcast', 'manual'
+    notes TEXT DEFAULT '',
+    metadata_json TEXT DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_comparables_subdivision ON comparables(subdivision);
+CREATE INDEX IF NOT EXISTS idx_comparables_zipcode ON comparables(zipcode);
+CREATE INDEX IF NOT EXISTS idx_comparables_county ON comparables(county);
+
 CREATE INDEX IF NOT EXISTS idx_properties_address ON properties(address);
 CREATE INDEX IF NOT EXISTS idx_properties_zipcode ON properties(zipcode);
 CREATE INDEX IF NOT EXISTS idx_documents_address ON documents(address);

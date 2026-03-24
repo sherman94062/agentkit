@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from demo.config import settings
 from demo.db import client as db
-from demo.routers import documents, properties, query, ui_api
+from demo.routers import documents, properties, query, ui_api, valuation
 
 logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
 logger = logging.getLogger("agentkit.demo")
@@ -39,6 +39,7 @@ app.include_router(query.router)
 app.include_router(documents.router)
 app.include_router(properties.router)
 app.include_router(ui_api.router)
+app.include_router(valuation.router)
 
 # Static files (dashboard SPA)
 static_dir = Path(__file__).parent / "static"
