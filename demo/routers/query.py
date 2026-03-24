@@ -14,7 +14,8 @@ from demo.models.schemas import QueryRequest, QueryResponse
 router = APIRouter(tags=["query"])
 
 # Build once at import time; shared across requests
-_client = anthropic.AsyncAnthropic()
+from demo.config import settings
+_client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 _coordinator, _registry, _logger = build_coordinator(_client)
 
 

@@ -7,6 +7,9 @@ from typing import Callable
 from .base import BaseAgent
 from .messages import AgentContext, AgentResult
 
+# Semaphore limits concurrent LLM calls to avoid rate limiting
+_DEFAULT_CONCURRENCY = 2
+
 logger = logging.getLogger("agentkit")
 
 
@@ -22,10 +25,11 @@ class Coordinator:
         result = await coordinator.run(context)
     """
 
-    def __init__(self):
+    def __init__(self, max_concurrency: int = _DEFAULT_CONCURRENCY):
         self._parallel_agents: list[BaseAgent] = []
         self._sequential_agents: list[BaseAgent] = []
         self._synthesizer: Callable | None = None
+        self._semaphore = asyncio.Semaphore(max_concurrency)
 
     def register_parallel(self, *agents: BaseAgent) -> None:
         self._parallel_agents.extend(agents)
@@ -37,12 +41,17 @@ class Coordinator:
         """fn(context, parallel_results, sequential_results) -> str"""
         self._synthesizer = fn
 
+    async def _run_agent_throttled(self, agent: BaseAgent, context: AgentContext) -> AgentResult:
+        """Run an agent with concurrency limiting to avoid API rate limits."""
+        async with self._semaphore:
+            return await agent.run(context)
+
     async def run(self, context: AgentContext) -> dict:
-        # Phase 1: parallel specialists
+        # Phase 1: parallel specialists (throttled by semaphore)
         parallel_results: list[AgentResult] = []
         if self._parallel_agents:
             raw = await asyncio.gather(
-                *[agent.run(context) for agent in self._parallel_agents],
+                *[self._run_agent_throttled(agent, context) for agent in self._parallel_agents],
                 return_exceptions=True,
             )
             for i, result in enumerate(raw):

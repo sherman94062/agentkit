@@ -254,6 +254,51 @@ body {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.progress-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.progress-card .progress-title {
+  font-weight: 600;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.progress-card .progress-agents {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.progress-agent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.progress-agent .agent-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+  flex-shrink: 0;
+}
+.progress-agent.running .agent-dot {
+  background: var(--accent);
+  animation: pulse 1s ease-in-out infinite;
+}
+.progress-agent.done .agent-dot { background: var(--green); }
+.progress-agent.failed .agent-dot { background: var(--red); }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+.progress-timer {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 10px;
+}
+
 @media (max-width: 1024px) {
   .layout { grid-template-columns: 1fr; }
   .sidebar, .trace-panel { display: none; }
@@ -319,6 +364,9 @@ body {
 const API = '';
 
 // --- Query ---
+const AGENT_NAMES = ['MarketAgent', 'PropertyAgent', 'NeighborhoodAgent', 'DocumentAgent', 'FinancialAgent'];
+let progressTimer = null;
+
 async function submitQuery() {
   const question = document.getElementById('query').value.trim();
   const address = document.getElementById('address').value.trim();
@@ -328,10 +376,12 @@ async function submitQuery() {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>';
 
-  // Clear empty state
+  // Clear previous results and show progress
   const answers = document.getElementById('answers');
-  const empty = answers.querySelector('.empty');
-  if (empty) empty.remove();
+  answers.innerHTML = '';
+  document.getElementById('trace-cards').innerHTML = '';
+  document.getElementById('log-entries').innerHTML = '';
+  showProgress(question);
 
   try {
     const resp = await fetch(API + '/query', {
@@ -342,17 +392,89 @@ async function submitQuery() {
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.detail || 'Query failed');
 
+    clearProgress();
     renderAnswer(question, data);
     renderTrace(data.agent_trace || []);
     document.getElementById('query').value = '';
     refreshCost();
     refreshLog();
   } catch (e) {
-    alert('Error: ' + e.message);
+    clearProgress();
+    answers.innerHTML = `<div class="answer-card" style="border-color:var(--red)">
+      <div style="color:var(--red);font-weight:600">Error</div>
+      <div style="margin-top:8px">${esc(e.message)}</div>
+    </div>`;
   } finally {
     btn.disabled = false;
     btn.textContent = 'Ask';
   }
+}
+
+function showProgress(question) {
+  const answers = document.getElementById('answers');
+  const card = document.createElement('div');
+  card.className = 'progress-card';
+  card.id = 'progress';
+
+  const agentsHtml = AGENT_NAMES.map((name, i) => {
+    const phase = i < 4 ? 'Phase 1 — parallel' : 'Phase 2 — sequential';
+    return `<div class="progress-agent" id="pa-${i}" data-name="${name}">
+      <span class="agent-dot"></span>
+      <span>${name}</span>
+      <span style="margin-left:auto;font-size:11px;color:var(--text-dim)">${phase}</span>
+    </div>`;
+  }).join('');
+
+  card.innerHTML = `
+    <div class="progress-title"><span class="spinner"></span> Processing query...</div>
+    <div style="font-size:13px;color:var(--text-dim);margin-bottom:12px">Q: ${esc(question)}</div>
+    <div class="progress-agents">${agentsHtml}</div>
+    <div class="progress-timer" id="progress-time">0s elapsed</div>
+  `;
+  answers.appendChild(card);
+
+  // Animate agents sequentially for visual feedback
+  const t0 = Date.now();
+  let step = 0;
+
+  // Start parallel agents immediately
+  for (let i = 0; i < 4; i++) {
+    setTimeout(() => {
+      const el = document.getElementById(`pa-${i}`);
+      if (el) el.className = 'progress-agent running';
+    }, i * 300);
+  }
+
+  progressTimer = setInterval(() => {
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(0);
+    const timerEl = document.getElementById('progress-time');
+    if (timerEl) timerEl.textContent = `${elapsed}s elapsed`;
+
+    // Simulate phase transitions based on typical timing
+    if (elapsed > 8 && step === 0) {
+      // Parallel agents likely done, start sequential
+      for (let i = 0; i < 4; i++) {
+        const el = document.getElementById(`pa-${i}`);
+        if (el) el.className = 'progress-agent done';
+      }
+      const seq = document.getElementById('pa-4');
+      if (seq) seq.className = 'progress-agent running';
+      step = 1;
+    }
+    if (elapsed > 15 && step === 1) {
+      const seq = document.getElementById('pa-4');
+      if (seq) seq.className = 'progress-agent done';
+      const timerEl2 = document.getElementById('progress-time');
+      if (timerEl2) timerEl2.textContent = `${elapsed}s — synthesizing answer...`;
+      step = 2;
+    }
+  }, 500);
+}
+
+function clearProgress() {
+  if (progressTimer) { clearInterval(progressTimer); progressTimer = null; }
+  const el = document.getElementById('progress');
+  if (el) el.remove();
 }
 
 function renderAnswer(question, data) {

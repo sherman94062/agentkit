@@ -11,14 +11,21 @@ def _headers() -> dict:
     return {"apikey": settings.attom_api_key, "Accept": "application/json"}
 
 
+def _split_address(address: str) -> dict:
+    """Split 'street, city, ST zip' into ATTOM's address1 + address2 params."""
+    parts = [p.strip() for p in address.split(",")]
+    if len(parts) >= 2:
+        return {"address1": parts[0], "address2": ", ".join(parts[1:])}
+    return {"address1": address, "address2": ""}
+
+
 async def get_parcel(address: str) -> dict:
     """Get basic property/parcel profile by address."""
-    # ATTOM expects address split, but also supports single-line
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(
             f"{BASE_URL}/property/basicprofile",
             headers=_headers(),
-            params={"address1": address},
+            params=_split_address(address),
         )
         resp.raise_for_status()
         return resp.json()
@@ -54,7 +61,7 @@ async def get_avm(address: str) -> dict:
         resp = await client.get(
             f"{BASE_URL}/avm/detail",
             headers=_headers(),
-            params={"address1": address},
+            params=_split_address(address),
         )
         resp.raise_for_status()
         return resp.json()
